@@ -51,8 +51,8 @@ class Image
 
     /**
      * Internal adapter
-	 *
-	 * @var AdapterInterface
+     *
+     * @var AdapterInterface
      */
     protected $adapter = null;
 
@@ -86,11 +86,11 @@ class Image
         'png'   => 'png',
         'gif'   => 'gif',
     );
-    
+
     /**
-     * Fallback image
+     * Fallback images
      */
-    protected $fallback;
+    protected $fallback = array();
 
     /**
      * Use fallback image
@@ -192,13 +192,32 @@ class Image
 
     /**
      * Sets the fallback image to use
+     * Replaces all fallback images previously added via addFallback()
+     *
+     *  @param string $fallback Fallback image absolute local path
      */
     public function setFallback($fallback = null)
     {
-        if ($fallback === null) {
-            $this->fallback = __DIR__ . '/images/error.jpg';
-        } else {
-            $this->fallback = $fallback;
+        if ($fallback !== null) {
+            $this->fallback = array($fallback);
+        }
+
+        return $this;
+    }
+
+    /**
+     *  Add a new fallback image
+     *  Fallback images will be chained in a FIFO pile
+     *
+     *  @param string | array $fallback Fallback image absolute local path
+     */
+    public function addFallback($fallback = null) {
+        if ($fallback !== null) {
+            if (is_array($fallback)) {
+                $this->fallback = array_merge($this->fallback, $fallback);
+            } else {
+                $this->fallback[] = $fallback;
+            }
         }
 
         return $this;
@@ -209,25 +228,19 @@ class Image
      */
     public function getFallback()
     {
+        if (empty($this->fallback)) {
+            return array(
+                __DIR__ . '/images/error.jpg'
+            );
+        }
+
         return $this->fallback;
     }
 
     /**
-     * Gets the fallback into the cache dir
+     * @return AdapterInterface
      */
-    public function getCacheFallback()
-    {
-        $fallback = $this->fallback;
-
-        return $this->cache->getOrCreateFile('fallback.jpg', array(), function($target) use ($fallback) {
-            copy($fallback, $target);
-        });
-    }
-
-	/**
-	 * @return AdapterInterface
-	 */
-	public function getAdapter()
+    public function getAdapter()
     {
         if (null === $this->adapter) {
             // Defaults to GD
@@ -314,6 +327,12 @@ class Image
     protected function addOperation($method, $args)
     {
         $this->operations[] = array($method, $args);
+    }
+
+    public function setOperations($operations = array()) {
+        $this->operations = $operations;
+
+        return $this;
     }
 
     /**
@@ -432,8 +451,8 @@ class Image
         // If the files does not exists, save it
         $image = $this;
 
-        // Target file should be younger than all the current image 
-        // dependencies        
+        // Target file should be younger than all the current image
+        // dependencies
         $conditions = array(
             'younger-than' => $this->getDependencies()
         );
@@ -520,11 +539,11 @@ class Image
      */
     public function getDependencies()
     {
-        $dependencies = array();
+        $dependencies = $this->getFallback();
 
         $file = $this->getFilePath();
         if ($file) {
-            $dependencies[] = $file;
+            array_unshift($dependencies, $file);
         }
 
         foreach ($this->operations as $operation) {
@@ -615,7 +634,13 @@ class Image
 
         } catch (\Exception $e) {
             if ($this->useFallbackImage) {
-                return (null === $file ? file_get_contents($this->fallback) : $this->getCacheFallback());
+                $fallbacks = $this->getFallback();
+
+                $fallback = self::Open(array_shift($fallbacks))
+                    ->setOperations($this->operations)
+                    ->addFallback($fallbacks);
+
+                return $fallback->save($file, $type, $quality);
             } else {
                 throw $e;
             }
