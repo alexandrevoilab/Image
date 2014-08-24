@@ -539,11 +539,19 @@ class Image
      */
     public function getDependencies()
     {
-        $dependencies = $this->getFallback();
+        $dependencies = array();
 
         $file = $this->getFilePath();
         if ($file) {
-            array_unshift($dependencies, $file);
+            if (file_exists($file)) {
+                $dependencies[] = $file;
+            }
+        }
+
+        foreach ($this->getFallback() as $file) {
+            if (file_exists($file)) {
+                $dependencies[] = $file;
+            }
         }
 
         foreach ($this->operations as $operation) {
